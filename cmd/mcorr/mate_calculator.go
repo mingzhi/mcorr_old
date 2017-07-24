@@ -7,15 +7,17 @@ type MateCalculator struct {
 	CodingTable *taxonomy.GeneticCode
 	MaxCodonLen int
 	CodonOffset int
+	CodonPos    int
 	Synonymous  bool
 }
 
 // NewMateCalculator returns a MateCalculator
-func NewMateCalculator(codingTable *taxonomy.GeneticCode, maxCodonLen, codonOffset int, synonymous bool) *MateCalculator {
+func NewMateCalculator(codingTable *taxonomy.GeneticCode, maxCodonLen, codonOffset, codonPos int, synonymous bool) *MateCalculator {
 	return &MateCalculator{
 		CodingTable: codingTable,
 		MaxCodonLen: maxCodonLen,
 		CodonOffset: codonOffset,
+		CodonPos:    codonPos,
 		Synonymous:  synonymous,
 	}
 }
@@ -38,9 +40,9 @@ func (cc *MateCalculator) CalcP2(aln1 Alignment, mates ...Alignment) (corrResult
 			cpList1 := cc.extractCodonPairs(cs1, pos, pos+l)
 			cpList2 := cc.extractCodonPairs(cs2, pos, pos+l)
 			for _, cp1 := range cpList1 {
-				nc1 := doubleCodons(cp1)
+				nc1 := doubleCodons(cp1, cc.CodonPos)
 				for _, cp2 := range cpList2 {
-					nc2 := doubleCodons(cp2)
+					nc2 := doubleCodons(cp2, cc.CodonPos)
 					if cc.Synonymous {
 						aa1 := cc.translateCodonPair(cp1[0])
 						aa2 := cc.translateCodonPair(cp2[0])

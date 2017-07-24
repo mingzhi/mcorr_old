@@ -1,9 +1,14 @@
 package main
 
 import (
+	"math/rand"
+
 	"github.com/mingzhi/biogo/seq"
 	"github.com/mingzhi/ncbiftp/taxonomy"
 )
+
+// SAMPLESIZE define the size of a random sample
+const SAMPLESIZE = 100
 
 // CorrResult stores a correlation result.
 type CorrResult struct {
@@ -30,26 +35,97 @@ type CodingCalculator struct {
 	CodingTable *taxonomy.GeneticCode
 	MaxCodonLen int
 	CodonOffset int
+	CodonPos    int
 	Synonymous  bool
 }
 
 // NewCodingCalculator return a CodingCalculator
-func NewCodingCalculator(codingTable *taxonomy.GeneticCode, maxCodonLen, codonOffset int, synonymous bool) *CodingCalculator {
+func NewCodingCalculator(codingTable *taxonomy.GeneticCode, maxCodonLen, codonOffset, codonPos int, synonymous bool) *CodingCalculator {
 	return &CodingCalculator{
 		CodingTable: codingTable,
 		MaxCodonLen: maxCodonLen,
 		CodonOffset: codonOffset,
+		CodonPos:    codonPos,
 		Synonymous:  synonymous,
 	}
 }
 
 // CalcP2 calculate P2
 func (cc *CodingCalculator) CalcP2(a Alignment, others ...Alignment) CorrResults {
-	results := calcP2Coding(a, cc.CodonOffset, cc.MaxCodonLen, cc.CodingTable, cc.Synonymous)
+	results := calcP2Coding(a, cc.CodonOffset, cc.CodonPos, cc.MaxCodonLen, cc.CodingTable, cc.Synonymous, calcP2, "P2")
+	// p3 := calcP2Coding(a, cc.CodonOffset, cc.CodonPos, cc.MaxCodonLen, cc.CodingTable, cc.Synonymous, calcP3, "P3")
+	// p4 := calcP2Coding(a, cc.CodonOffset, cc.CodonPos, cc.MaxCodonLen, cc.CodingTable, cc.Synonymous, calcP4, "P4")
+	// results = append(results, p3...)
+	// results = append(results, p4...)
 	return CorrResults{ID: a.ID, Results: results}
 }
 
-func calcP2Coding(aln Alignment, codonOffset int, maxCodonLen int, codingTable *taxonomy.GeneticCode, synonymous bool) (results []CorrResult) {
+func calcP2(codonPairs []CodonPair, codonPos int) (xy float64, n int) {
+	nc := doubleCodons(codonPairs, codonPos)
+	xy, _, _, n = nc.Cov11()
+	return
+}
+
+func calcP0(codonPairs []CodonPair, codonPos int) (xy float64, n int) {
+	nc := doubleCodons(codonPairs, codonPos)
+	xy, _, _, n = nc.Cov00()
+	return
+}
+
+func calcP3(codonPairs []CodonPair, codonPos int) (xy float64, n int) {
+	for n := 0; n < SAMPLESIZE; n++ {
+		i := rand.Intn(len(codonPairs))
+		j := rand.Intn(len(codonPairs))
+		for i == j {
+			j = rand.Intn(len(codonPairs))
+		}
+		k := rand.Intn(len(codonPairs))
+		for i == k || j == k {
+			k = rand.Intn(len(codonPairs))
+		}
+		a := codonPairs[i].A[codonPos]
+		b := codonPairs[i].B[codonPos]
+		c := codonPairs[j].A[codonPos]
+		d := codonPairs[k].B[codonPos]
+		if a != c && b != d {
+			xy++
+		}
+		n++
+	}
+	return
+}
+
+func calcP4(codonPairs []CodonPair, codonPos int) (xy float64, n int) {
+	for n := 0; n < SAMPLESIZE; n++ {
+		i := rand.Intn(len(codonPairs))
+		j := rand.Intn(len(codonPairs))
+		for i == j {
+			j = rand.Intn(len(codonPairs))
+		}
+		k := rand.Intn(len(codonPairs))
+		for i == k || j == k {
+			k = rand.Intn(len(codonPairs))
+		}
+		h := rand.Intn(len(codonPairs))
+		for i == h || j == h || k == h {
+			h = rand.Intn(len(codonPairs))
+		}
+		a := codonPairs[i].A[codonPos]
+		b := codonPairs[h].B[codonPos]
+		c := codonPairs[j].A[codonPos]
+		d := codonPairs[k].B[codonPos]
+		if a != c && b != d {
+			xy++
+		}
+		n++
+	}
+	return
+}
+
+// CalcP is a function type to calculate p2, p3, and p4
+type CalcP func(codonPairs []CodonPair, codonPos int) (xy float64, n int)
+
+func calcP2Coding(aln Alignment, codonOffset int, codonPos int, maxCodonLen int, codingTable *taxonomy.GeneticCode, synonymous bool, calcP CalcP, corrType string) (results []CorrResult) {
 	codonSequences := [][]Codon{}
 	for _, s := range aln.Sequences {
 		codons := extractCodons(s, codonOffset)
@@ -59,10 +135,8 @@ func calcP2Coding(aln Alignment, codonOffset int, maxCodonLen int, codingTable *
 	nn := 0
 	for l := 0; l < maxCodonLen; l++ {
 		totalP2 := 0.0
-		totalP0 := 0.0
 		totaln := 0
 		if l > 0 && ks == 0.0 {
-			totalP0 = 1.0
 			totalP2 = 0.0
 			totaln = nn
 		} else {
@@ -84,12 +158,18 @@ func calcP2Coding(aln Alignment, codonOffset int, maxCodonLen int, codingTable *
 
 				for _, codonPairs := range multiCodonPairs {
 					if len(codonPairs) >= 2 {
-						nc := doubleCodons(codonPairs)
-						xy, _, _, n := nc.Cov11()
-						totalP2 += xy
-						totaln += n
-						xy, _, _, n = nc.Cov00()
-						totalP0 += xy
+						var codonPositions []int
+						if codonPos == -1 {
+							codonPositions = []int{0, 1, 2}
+						} else {
+							codonPositions = append(codonPositions, codonPos)
+						}
+
+						for _, codonP := range codonPositions {
+							xy, n := calcP(codonPairs, codonP)
+							totalP2 += xy
+							totaln += n
+						}
 					}
 				}
 			}
@@ -104,27 +184,20 @@ func calcP2Coding(aln Alignment, codonOffset int, maxCodonLen int, codingTable *
 			Lag:  l * 3,
 			Mean: totalP2 / float64(totaln),
 			N:    totaln,
-			Type: "P2",
+			Type: corrType,
 		}
 		results = append(results, res1)
-		res2 := CorrResult{
-			Lag:  l * 3,
-			Mean: totalP0 / float64(totaln),
-			N:    totaln,
-			Type: "P0",
-		}
-		results = append(results, res2)
 	}
 
 	return
 }
 
-func doubleCodons(codonPairs []CodonPair) *NuclCov {
+func doubleCodons(codonPairs []CodonPair, codonPos int) *NuclCov {
 	alphabet := []byte{'A', 'T', 'G', 'C'}
 	c := NewNuclCov(alphabet)
 	for _, codonPair := range codonPairs {
-		a := codonPair.A[2]
-		b := codonPair.B[2]
+		a := codonPair.A[codonPos]
+		b := codonPair.B[codonPos]
 		c.Add(a, b)
 	}
 	return c

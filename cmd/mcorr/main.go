@@ -30,7 +30,9 @@ func main() {
 	maxl := app.Flag("max_corr_len", "Maximum length of correlation (base pairs)").Default("300").Int()
 	ncpu := app.Flag("ncpu", "Number of CPUs (default: using all available cores)").Default("0").Int()
 	numBoot := app.Flag("num_boot", "Number of bootstrapping on genes").Default("1000").Int()
+	codonPos := app.Flag("codon_pos", "codong position").Default("3").Int()
 	progress := app.Flag("progress", "Show progress").Default("false").Bool()
+	synonymous := app.Flag("synonmous", "Synonmous").Default("false").Bool()
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 
@@ -41,8 +43,15 @@ func main() {
 	if *progress {
 		numAlignment = countAlignments(*alnFile)
 		log.Printf("Total number of alignments: %d\n", numAlignment)
-		pbar = pb.StartNew(numAlignment)
+		pbar = pb.New(numAlignment)
+		pbar.SetWidth(60)
+		pbar.Start()
 		defer pbar.Finish()
+	}
+
+	if *codonPos == 4 {
+		*codonPos = 3
+		*synonymous = true
 	}
 
 	// prepare calculator.
@@ -50,16 +59,15 @@ func main() {
 	codingTable := taxonomy.GeneticCodes()["11"]
 	maxCodonLen := *maxl / 3
 	codonOffset := 0
-	synonymous := true
 
 	alnChan := readAlignments(*alnFile)
 	var corrResChan chan CorrResults
 	if *mateFile != "" {
-		calculator = NewMateCalculator(codingTable, maxCodonLen, codonOffset, synonymous)
+		calculator = NewMateCalculator(codingTable, maxCodonLen, codonOffset, *codonPos-1, *synonymous)
 		mateAlnChan := readAlignments(*mateFile)
 		corrResChan = calcTwoClade(alnChan, mateAlnChan, calculator)
 	} else {
-		calculator = NewCodingCalculator(codingTable, maxCodonLen, codonOffset, synonymous)
+		calculator = NewCodingCalculator(codingTable, maxCodonLen, codonOffset, *codonPos-1, *synonymous)
 		corrResChan = calcSingleClade(alnChan, calculator)
 	}
 

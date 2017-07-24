@@ -22,6 +22,7 @@ func countAlignments(file string) (count int) {
 	f := openFile(file)
 	defer f.Close()
 	rd := bufio.NewReader(f)
+	numOfSeq := 0
 	for {
 		line, err := rd.ReadString('\n')
 		if err != nil {
@@ -31,7 +32,13 @@ func countAlignments(file string) (count int) {
 			break
 		}
 		if line[0] == '=' {
-			count++
+			if numOfSeq > 1 {
+				count++
+			}
+			numOfSeq = 0
+		}
+		if line[0] == '>' {
+			numOfSeq++
 		}
 	}
 	return
